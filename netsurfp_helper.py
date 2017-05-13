@@ -1,6 +1,8 @@
 import re
 import pandas as pd
 
+
+
 directory = '/Users/sarahwooller/Documents/TS_OG/'
 
 def convert_to_csv(directory,filename):
