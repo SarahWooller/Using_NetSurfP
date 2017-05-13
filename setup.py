@@ -1,13 +1,12 @@
 
-import setuptools
-from distutils.core import setup
+from setuptools  import setup
 
 setup(
       name='Using_NetSurfP',
-      packages=['Using_NetSurP'],
+      packages=['Using_NetSurfP'],
       version='0.1',
       description='Tools to help with NetSurfP',
-      license = 'MIT'
+      license = 'MIT',
       author='Sarah Wooller',
       author_email='s.k.wooller@sussex.ac.uk',
       url='https://github.com/SarahWooller/Using_NetSurfP',
@@ -19,5 +18,6 @@ setup(
       ],
       setup_requires=[],
       tests_require=[],
+      zip_safe = False
       )
 

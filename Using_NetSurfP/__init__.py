@@ -2,9 +2,6 @@ import re
 import pandas as pd
 
 
-
-directory = '/Users/sarahwooller/Documents/TS_OG/'
-
 def convert_to_csv(directory,filename):
     """takes the output from NetSurfP and spits out the relevant csv saved to the directory/root_of_filename.csv"""
     with open(directory+filename,'r') as file:
