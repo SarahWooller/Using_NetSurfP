@@ -6,80 +6,101 @@ import sys
 import subprocess
 import os
 
-class Mut:
-    
-    def __init__(self,mut):
-        
-        self.mut = mut
-        self.messages = {'ok':(True,'no problems encountered' ),
-                         'no ENST':(False,'no ENSTs correspond to this Uniprot code'),
-                         'too short':(False, "none of the corresponding codes were long enough to encorporate this "+
-                                      "mutation"),
-                         'wrong wild type': (False, "whilst at least one of the corresponding codes was long enough to"+
-                                             "encorporate this mutation the AA did not correspond to the wild type given")
-                        
-                        }
+def main():
 
+	action = {'query': form_query}
+	arg = input('What would you like to do? query/total ')
+	action[arg]()
+	
+
+def get_ENST_codes():
+	with open('./data/ENST_codes.json', 'r') as file:
+		return json.load(file)
+
+def get_ENST_Uniprot():     
+    return pd.DataFrame.from_csv('./data/ENST_Uniprot.csv')
+
+
+class Mut:
+	"""A Mut is a package of information about a mutation that encorporates its Uniprot
+	number, together with a valid AA code, wild type and mutated AA. It also includes
+	a bit of information for debugging. """
+
+	def __init__(self,mut,ENST_Uniprot,ENST_codes):
+
+		self.mut = mut
+		self.ENST_Uniprot = ENST_Uniprot
+		self.ENST_codes = ENST_codes
+		self.messages = {'ok':(True,'no problems encountered' ),
+						 'no ENST':(False,'no ENSTs correspond to this Uniprot code'),
+						 'too short':(False, "none of the corresponding codes were long enough to encorporate this "+
+									  "mutation"),
+						 'wrong wild type': (False, "whilst at least one of the corresponding codes was long enough to"+
+											 "encorporate this mutation the AA did not correspond to the wild type given")
+						}
+		parts = mut.split('_')
+		self.name = parts[0]
+		self.mutation = parts[1]
+		self.wild = self.mutation[0]
+		self.change = self.mutation[-1]
+		self.pos = int(self.mutation[1:-1])
+
+		self.valid,self.ENSTs = self.get_ENSTs()
+		self.valid,self.ENST,self.wild_code = self.get_code()
+		self.mutant_code = self.mutate_code()
+	
+	
+	def get_ENSTs(self):
+		"""identify all the ENSTs associated with this Uniprot code"""
+		i=self.name
+		if i[:4]=='ENST':
+			return [i]
+		elif i in set(self.ENST_Uniprot['UniProtKB/Swiss-Prot ID']):
+			Uni = 'UniProtKB/Swiss-Prot ID'
+		elif i in set(self.ENST_Uniprot['UniProtKB/TrEMBL ID']):
+			Uni = 'UniProtKB/TrEMBL ID'
+		else:
+			return (self.messages['no ENST'],'')
+		return (self.messages['ok'],list(self.ENST_Uniprot[self.ENST_Uniprot[Uni]==i].index))
+
+	def get_code(self):
+		"""check through the codes to find one that is valid!"""
+		length_ok = False
+		pos_ok = False
+
+		codes = [self.ENST_codes.get(m,'') for m in self.ENSTs]
+		C = len(codes)
+
+		for i in range(C):
+			if len(codes[i])>=self.pos:
+				length_ok = True
+				if codes[i][self.pos-1]==self.wild:
+					pos_ok = True
+					return (self.messages['ok'],self.ENSTs[i],codes[i])
+		if not length_ok:
+			return (self.messages['too short'],'','')
+		else:
+			return (self.messages['wrong wild type'],'','')
     
-        parts = mut.split('_')
-        self.name = parts[0]
-        self.mutation = parts[1]
-        self.wild = self.mutation[0]
-        self.change = self.mutation[-1]
-        self.pos = int(self.mutation[1:-1])
-        
-        self.valid,self.ENSTs = self.get_ENSTs()
-        self.valid,self.ENST,self.wild_code = self.get_code()
-        self.mutant_code = self.mutate_code()
-        
-        
-    def get_ENSTs(self):
-        i=self.name
-        if i[:4]=='ENST':
-            return [i]
-        elif i in set(ENST_Uniprot['UniProtKB/Swiss-Prot ID']):
-            Uni = 'UniProtKB/Swiss-Prot ID'
-        elif i in set(ENST_Uniprot['UniProtKB/TrEMBL ID']):
-            Uni = 'UniProtKB/TrEMBL ID'
-        else:
-            return (self.messages['no ENST'],'')
-        return (self.messages['ok'],list(ENST_Uniprot[ENST_Uniprot[Uni]==i].index))
-    
-    def get_code(self):
-        length_ok = False
-        pos_ok = False
-        
-        codes = [ENST_codes.get(m,'') for m in self.ENSTs]
-        C = len(codes)
-        
-        for i in range(C):
-            if len(codes[i])>=self.pos:
-                length_ok = True
-                if codes[i][self.pos-1]==self.wild:
-                    pos_ok = True
-                    return (self.messages['ok'],self.ENSTs[i],codes[i])
-        if not length_ok:
-            return (self.messages['too short'],'','')
-        else:
-            return (self.messages['wrong wild type'],'','')
-    
-    def mutate_code(self):
-        return self.wild_code[:self.pos-1]+self.change+self.wild_code[self.pos:]
-        
-    def for_printing(self):
-        return ('>{0}_{1}'.format(self.ENST,self.mut),Split(self.mutant_code,61))
+	def mutate_code(self):
+		return self.wild_code[:self.pos-1]+self.change+self.wild_code[self.pos:]
+	
+	def for_printing(self):
+		return ('>{0}_{1}'.format(self.ENST,self.mut),Split(self.mutant_code,61))
 
 def refine_questions():
+	
     temp = os.listdir('./temp_questions')
     pattern = re.compile('questions(\d+)\.*fsa')
     return [l for l in temp if pattern.match(l)]
 
 
 def clean_directories():
-    subprocess.Popen(['rm','-rf', os.path.abspath('./temp_questions/')])
-    subprocess.Popen(['mkdir', 'temp_questions'])
-    subprocess.Popen(['rm','-rf', os.path.abspath('./temp_answers/')])
-    subprocess.Popen(['mkdir', 'temp_answers'])
+	"""set up a new temp_questions and new temp_answers directory"""
+	subprocess.Popen(['rm','-rf', os.path.abspath('./temp_questions/')])
+	subprocess.Popen(['mkdir', 'temp_questions'])
+	subprocess.Popen(['rm','-rf', os.path.abspath('./temp_answers/')])
+	subprocess.Popen(['mkdir', 'temp_answers'])
 
 def do_netsurfp(file_number):
 
@@ -95,48 +116,31 @@ def Split(string,n):
 	N =len(string)//n
 	return '\n'.join([string[i*n:(i+1)*n] for i in range(N)]+[string[N*n:]])
 
-def make_NetSurfP_query():
-    muts = get_query()
-    mutations =[Mut(l) for l in muts]
-    validity = dict(zip([m.name for m in mutations],[m.valid for m in mutations]))
-    for_printing = [m.for_printing() for m in mutations]
-    temp_lists = dont_exceed_max(10000,for_printing)
-    make_questions('./temp_questions/','questions', temp_lists)
-    mutations_listed=[[i[0] for i in j] for j in temp_lists]
-    fine, too_short,wrong_wild = split_validity(validity)
-    
-    query = {'fine':fine,
-            'too short': too_short,
-            'wrong wild': wrong_wild,
-            'mutations for netsurfp': mutations_listed}
-    
-    with open('./temp_answers/query.json','w') as file:
-        json.dump(query,file)
+def get_query():
+    print('To use this program you need to supply a file with a list of mutation codes\n',
+         'These codes should be in the form of identifier_M244V where here\n',
+         'M is the wild type 244 is the position and V is the mutant amino acid\n',
+         'Your file should contain one mutation code per line and no other information\n')
+    query_file = input('please type the full path of the file that contains your mutation codes here')
+    try:
+        with open(query_file,'r') as file:
+            tmp = file.readlines()
+        return [t.strip('\n') for t in tmp]
+    except FileNotFoundError:
+        print('file not found, quit and try again')
+        return []
+    return []
 
-def make_questions(pathname, filename, temp_lists):q 
-    for t in range(len(temp_lists)):
-        name = pathname+filename+str(t)+'.fsa'
-        with open(name,'w') as file:
-            file.write('')
-        with open(name,'a') as file:
-            for i in temp_lists[t]:
-                a,b = i
-                file.write(a+'\n')
-                file.write(b+'\n')
-
-def split_validity(validity):
-    too_short=[]
-    wrong_wild=[]
-    fine = []
-    for v in validity:
-        a,b = validity[v]
-        if a:
-            fine.append(v)
-        elif b=='none of the corresponding codes were long enough to encorporate this mutation':
-            too_short.append(v)
-        else:
-            wrong_wild.append(v)
-    return (fine, too_short,wrong_wild)
+def make_questions(pathname, filename, temp_lists): 
+	for t in range(len(temp_lists)):
+		name = pathname+filename+str(t)+'.fsa'
+		with open(name,'w') as file:
+			file.write('')
+		with open(name,'a') as file:
+			for i in temp_lists[t]:
+				a,b = i
+				file.write(a+'\n')
+				file.write(b+'\n')
 
 def dont_exceed_max(Max,code_list):
     """I need to ensure that NetSurfP is not overwhelmed - so I split the queries to ensure that each is less than Max
@@ -158,27 +162,38 @@ def dont_exceed_max(Max,code_list):
     temp_list.append(for_inclusion)
     return temp_list
 
-def get_query():
-    print('To use this program you need to supply a file with a list of mutation codes\n',
-         'These codes should be in the form of identifier_M244V where here\n',
-         'M is the wild type 244 is the position and V is the mutant amino acid\n',
-         'Your file should contain one mutation code per line and no other information\n')
-    query_file = input('please type the full path of the file that contains your mutation codes here')
-    try:
-        with open(query_file,'r') as file:
-            tmp = file.readlines()
-        return [t.strip('\n') for t in tmp]
-    except FileNotFoundError:
-        print('file not found, quit and try again')
-        return []
+def split_validity(validity):
+    too_short=[]
+    wrong_wild=[]
+    fine = []
+    for v in validity:
+        a,b = validity[v]
+        if a:
+            fine.append(v)
+        elif b=='none of the corresponding codes were long enough to encorporate this mutation':
+            too_short.append(v)
+        else:
+            wrong_wild.append(v)
+    return (fine, too_short,wrong_wild)
 
 
-def get_ENST_codes():
-	with open(os.path.abspath('./data/ENST_codes.json', 'r') as file:
-		return json.load(file)
-
-def get_ENST_Uniprot():     
-    return pd.DataFrame.from_csv(os.path.abspath('./data/ENST_Uniprot.csv'))
+def make_NetSurfP_query(ENST_Uniprot,ENST_codes):
+    muts = get_query()
+    mutations =[Mut(l,ENST_Uniprot,ENST_codes) for l in muts]
+    validity = dict(zip([m.name for m in mutations],[m.valid for m in mutations]))
+    for_printing = [m.for_printing() for m in mutations]
+    temp_lists = dont_exceed_max(10000,for_printing)
+    make_questions('./temp_questions/','questions', temp_lists)
+    mutations_listed=[[i[0] for i in j] for j in temp_lists]
+    fine, too_short,wrong_wild = split_validity(validity)
+    
+    query = {'fine':fine,
+            'too short': too_short,
+            'wrong wild': wrong_wild,
+            'mutations for netsurfp': mutations_listed}
+    
+    with open('./temp_answers/query.json','w') as file:
+        json.dump(query,file)
 
 
 def convert_to_csv(directory,filename):
@@ -220,18 +235,21 @@ def find_mutants(df, mutation_list):
     return (pd.concat(matched),unmatched)
 
 
-def main():
-    ENST_codes = get_ENST_codes()
-    print('got ENST codes')
-    ENST_Uniprot = get_ENST_Uniprot()
-    print('got ENST Uniprot')
+def form_query():
+    
     clean_directories()
     print('directories cleaned')
-    file_number = make_NetSurfP_query()
+    ENST_codes = get_ENST_codes()
+    print('got ENST codes')
+    EU = get_ENST_Uniprot()
+    print('got ENST Uniprot')
+    file_number = make_NetSurfP_query(EU,ENST_codes)
     print('queries made')
+
+def run():
     do_netsurfp(file_number)
     print('netsurfp completed')
 
-
-if __name__== "__main__":
+if __name__=="__main__":
 	main()
+
